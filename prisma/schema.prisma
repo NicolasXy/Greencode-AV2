@@ -1,0 +1,185 @@
+// spiderman
+// Modelo de dados do greencode (API). Replica o modelo de dominio do CLI:
+// Organizacao 1-0..1 Contrato, Organizacao 1-N Lote, Lote 1-N Equipamento,
+// Equipamento 1-N Movimentacao. A URL do banco NAO fica aqui (Prisma 7):
+// ela e lida por prisma.config.ts (migracoes) e por src/server/db/prisma.ts (runtime).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/server/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Papel {
+  admin
+  cadastro
+  almoxarifado
+  auditor
+}
+
+enum StatusLote {
+  recebido
+  em_triagem
+  triagem_completa
+  encerrado
+}
+
+enum StatusEquipamento {
+  aguardando_triagem
+  em_triagem
+  triado
+  desmonte
+  reciclagem
+  descarte_seguro
+  revenda
+}
+
+enum EstadoFisico {
+  novo
+  seminovo
+  bom
+  regular
+  ruim
+  sucata
+}
+
+// Contas de acesso. `versao` implementa o versionamento otimista (ver README).
+model Usuario {
+  id           String   @id @default(uuid()) @db.Uuid
+  username     String   @unique
+  senhaHash    String
+  papel        Papel
+  ativo        Boolean  @default(true)
+  versao       Int      @default(1)
+  criadoEm     DateTime @default(now()) @db.Timestamptz(3)
+  atualizadoEm DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  lotes         Lote[]
+  movimentacoes Movimentacao[]
+  auditorias    Auditoria[]
+}
+
+model Organizacao {
+  id           String   @id @default(uuid()) @db.Uuid
+  cnpj         String   @unique
+  razaoSocial  String
+  contato      String?
+  // Soft delete: organizacao inativa some das listagens e nao recebe novos lotes/contratos.
+  ativo        Boolean   @default(true)
+  inativadoEm  DateTime? @db.Timestamptz(3)
+  versao       Int      @default(1)
+  criadoEm     DateTime @default(now()) @db.Timestamptz(3)
+  atualizadoEm DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  contrato Contrato?
+  lotes    Lote[]
+}
+
+// Um contrato por organizacao (relacao 1-0..1 garantida pelo @unique em organizacaoId).
+model Contrato {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizacaoId        String   @unique @db.Uuid
+  dataInicio           DateTime @db.Date
+  frequenciaColetaDias Int
+  condicoes            String?
+  clausulas            Json?
+  ativo                Boolean  @default(true)
+  versao               Int      @default(1)
+  criadoEm             DateTime @default(now()) @db.Timestamptz(3)
+  atualizadoEm         DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  // Delete definitivo da organizacao remove o contrato em cadeia.
+  organizacao Organizacao @relation(fields: [organizacaoId], references: [id], onDelete: Cascade)
+}
+
+model Lote {
+  id             String     @id @default(uuid()) @db.Uuid
+  organizacaoId  String     @db.Uuid
+  nf             String
+  transportadora String
+  dataEntrada    DateTime   @db.Date
+  status         StatusLote @default(recebido)
+  criadoPorId    String     @db.Uuid
+  // Soft delete (em cadeia com a organizacao). O status do lote e DERIVADO dos equipamentos.
+  ativo          Boolean    @default(true)
+  inativadoEm    DateTime?  @db.Timestamptz(3)
+  versao         Int        @default(1)
+  criadoEm       DateTime   @default(now()) @db.Timestamptz(3)
+  atualizadoEm   DateTime   @default(now()) @updatedAt @db.Timestamptz(3)
+
+  organizacao  Organizacao   @relation(fields: [organizacaoId], references: [id], onDelete: Cascade)
+  criadoPor    Usuario       @relation(fields: [criadoPorId], references: [id], onDelete: Restrict)
+  equipamentos Equipamento[]
+
+  @@unique([organizacaoId, nf])
+  @@index([organizacaoId])
+  @@index([status])
+}
+
+model Equipamento {
+  id                  String            @id @default(uuid()) @db.Uuid
+  loteId              String            @db.Uuid
+  // O codigo de barras e o proprio id (garantido por CHECK no banco); a coluna existe para a restricao de unicidade explicita.
+  codigoBarrasInterno String            @unique
+  // Posicao automatica dentro do lote (1, 2, 3...), como o indice de um array.
+  posicao             Int
+  tipo                String
+  estadoFisico        EstadoFisico      @default(novo)
+  status              StatusEquipamento @default(aguardando_triagem)
+  triagemCompleta     Boolean           @default(false)
+  versao              Int               @default(1)
+  criadoEm            DateTime          @default(now()) @db.Timestamptz(3)
+  atualizadoEm        DateTime          @default(now()) @updatedAt @db.Timestamptz(3)
+
+  lote          Lote           @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  movimentacoes Movimentacao[]
+
+  @@unique([loteId, posicao])
+  @@index([loteId])
+  @@index([status])
+}
+
+// Historico imutavel de mudancas de status/estado fisico (rastreabilidade).
+model Movimentacao {
+  id            String             @id @default(uuid()) @db.Uuid
+  equipamentoId String             @db.Uuid
+  usuarioId     String             @db.Uuid
+  statusDe      StatusEquipamento?
+  statusPara    StatusEquipamento?
+  estadoDe      EstadoFisico?
+  estadoPara    EstadoFisico?
+  justificativa String?
+  criadoEm      DateTime           @default(now()) @db.Timestamptz(3)
+
+  equipamento Equipamento @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  usuario     Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([equipamentoId, criadoEm])
+}
+
+// Equivalente ao journal do CLI: trilha de auditoria gravada na MESMA
+// transacao da operacao (ou ambos persistem, ou nenhum).
+model Auditoria {
+  id        BigInt   @id @default(autoincrement())
+  usuarioId String?  @db.Uuid
+  acao      String
+  detalhes  Json?
+  criadoEm  DateTime @default(now()) @db.Timestamptz(3)
+
+  usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([criadoEm])
+  @@index([acao])
+}
+
+// Parametros globais do sistema (equivalente ao arquivo parametros.dat do CLI): pares chave/valor geridos pelo admin.
+model ParametroGlobal {
+  chave        String   @id
+  valor        String
+  versao       Int      @default(1)
+  atualizadoEm DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+}

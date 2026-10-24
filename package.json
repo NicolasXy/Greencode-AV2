@@ -1,0 +1,55 @@
+{
+  "name": "greencode",
+  "version": "1.0.0",
+  "description": "Plataforma de logistica reversa de residuos eletronicos: CLI (AV1) e API HTTP Fastify + Prisma + PostgreSQL (AV2)",
+  "main": "dist/cli/index.js",
+  "bin": {
+    "greencode": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/cli/index.js",
+    "dev": "ts-node src/cli/index.ts",
+    "test": "npm run build && node tests/run-all.js",
+    "test:journey": "npm run build && node tests/run-journey.js",
+    "test:security": "npm run build && node tests/run-security.js",
+    "test:domain": "npm run build && node tests/run-domain.js",
+    "test:compliance": "npm run build && node tests/run-compliance.js",
+    "test:write-ahead": "npm run build && node tests/run-write-ahead.js",
+    "test:session": "npm run build && node tests/run-session-timeout.js",
+    "clean:data": "rimraf data",
+    "serve": "node dist/server/server.js",
+    "serve:dev": "ts-node src/server/server.ts",
+    "prisma:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "node dist/server/seed.js",
+    "db:setup": "prisma migrate deploy && npm run build && node dist/server/seed.js",
+    "test:api": "npm run build && node tests/run-api.js",
+    "docs:openapi": "node dist/server/exportarOpenApi.js"
+  },
+  "engines": {
+    "node": "^20.19 || ^22.12 || >=24.0"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.23.1",
+    "prisma": "^7.10.1",
+    "rimraf": "^5.0.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.1",
+    "@fastify/jwt": "^10.2.5",
+    "@fastify/swagger": "^9.9.2",
+    "@fastify/swagger-ui": "^6.1.2",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
+    "bcrypt": "^6.0.0",
+    "dotenv": "^18.0.8",
+    "fastify": "^5.12.7",
+    "pg": "^8.23.1"
+  }
+}

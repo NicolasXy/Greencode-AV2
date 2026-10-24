@@ -1,0 +1,16 @@
+# PostgreSQL local para desenvolvimento (Windows 10+, Ubuntu 24.04+ e derivadas, com Docker).
+# Uso: docker compose up -d   (os dados ficam no volume "greencode_pg")
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: greencode
+      POSTGRES_PASSWORD: greencode
+      POSTGRES_DB: greencode
+    ports:
+      - "5432:5432"
+    volumes:
+      - greencode_pg:/var/lib/postgresql/data
+volumes:
+  greencode_pg:
